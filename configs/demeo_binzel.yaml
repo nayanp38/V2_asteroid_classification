@@ -1,0 +1,144 @@
+# DeMeo + Binzel only (no Marsset 2022 MITHNEOS) — for ablations and paper Run 1–3 parity.
+data_root: data
+demeo_gp_dir: DeMeo2009data_gp
+binzel_gp_dir: Binzel2019data_gp
+demeotax_file: demeotax.tab
+binzel_classes_file: Binzel_classes.txt
+manifest_file: labels_manifest.csv
+mars_crossers_file: mars_crossers.txt
+
+wavelength_min: 0.45
+wavelength_max: 2.45
+wavelength_step: 0.005
+normalize_wavelength: 0.55
+
+preprocess:
+  std_mask_enabled: true
+  std_mask_floor: 0.02
+  std_mask_k: 2.0
+  frozen_run_enabled: true
+  frozen_eps: 1.0e-4
+  frozen_run_min: 4
+  min_valid_fraction: 0.5
+  artifact_fill_value: 1.0
+
+bd_classes:
+  - A
+  - B
+  - C
+  - Cb
+  - Cg
+  - Cgh
+  - Ch
+  - D
+  - K
+  - L
+  - O
+  - Q
+  - R
+  - S
+  - Sa
+  - Sq
+  - Sr
+  - Sv
+  - T
+  - V
+  - X
+  - Xc
+  - Xk
+  - Xn
+  - Xe
+
+class_aliases:
+  Sw: S
+  Sqw: Sq
+  Srw: Sr
+  Vw: V
+  Svw: Sv
+
+coarse_groups:
+  S: [S, Sa, Sq, Sr, Sv]
+  C: [C, Cb, Cg, Cgh, Ch]
+  X: [X, Xc, Xk, Xn, Xe]
+  A: [A]
+  B: [B]
+  D: [D]
+  K: [K]
+  L: [L]
+  O: [O]
+  Q: [Q]
+  R: [R]
+  T: [T]
+  V: [V]
+
+run1_xn_training_ids:
+  - "1862"
+  - "3103"
+  - "4055"
+  - "10302"
+
+excluded_classes:
+  - U
+  - P
+
+training:
+  batch_size: 16
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  max_epochs: 50
+  early_stop_patience: 15
+  val_fraction: 0.25
+  split_seed: 42
+  warmup_epochs: 3
+  cosine_lr: true
+  grad_clip_norm: 1.0
+  class_weight_mode: linear
+  class_weight_beta: 0.999
+  focal_gamma: 0.0
+  label_smoothing: 0.0
+
+hierarchical:
+  enabled: true
+  coarse_weight: 0.3
+  constrained_inference: true
+
+run3:
+  train_fraction: 0.8
+  min_test_per_class: 1
+  min_class_size_for_80_20: 5
+
+cv5:
+  n_splits: 5
+  seed: 42
+
+phase2:
+  augmentation:
+    enabled: false
+    noise_std: 0.015
+    smooth_sigma: 0.8
+    p_noise: 0.8
+    p_smooth: 0.3
+  optuna:
+    n_trials: 20
+    max_epochs: 30
+    early_stop_patience: 8
+  gradcam:
+    enabled: true
+    max_samples: 12
+  inference:
+    enabled: true
+    reject_probability: 0.35
+    reject_entropy: null
+
+pretrain:
+  enabled: false
+  mask_fraction: 0.15
+  mask_min_bins: 5
+  mask_max_bins: 30
+  n_windows_max: 3
+  batch_size: 32
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  max_epochs: 200
+  warmup_epochs: 5
+  freeze_encoder_epochs: 0

@@ -30,9 +30,10 @@ def dedupe_by_asteroid(records: Sequence[LabelRecord]) -> Tuple[List[LabelRecord
     seen: Set[str] = set()
     deduped: List[LabelRecord] = []
     index_map: List[int] = []
+    source_rank = {"demeo": 0, "binzel": 1, "marsset": 2}
     order = sorted(
         range(len(records)),
-        key=lambda i: (0 if records[i].source == "demeo" else 1, i),
+        key=lambda i: (source_rank.get(records[i].source, 9), i),
     )
     for i in order:
         aid = records[i].asteroid_id

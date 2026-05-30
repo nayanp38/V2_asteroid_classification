@@ -34,7 +34,7 @@ import torch.nn.functional as F  # noqa: E402
 from torch.utils.data import DataLoader, Dataset  # noqa: E402
 
 from asteroid_ml.augmentation import AugmentConfig, augment_spectrum
-from asteroid_ml.config import ROOT, load_config
+from asteroid_ml.config import ROOT, load_config, pretrain_enabled
 from asteroid_ml.models import SpectraNetLite, SpectrumCNN
 from asteroid_ml.spectrum_io import PreprocessConfig, preprocess_spectrum
 
@@ -76,10 +76,19 @@ class _UnlabeledSpectraDataset(Dataset):
 def _collect_gp_paths(cfg: dict) -> List[Path]:
     data_root = ROOT / cfg["data_root"]
     out: List[Path] = []
-    for sub in (cfg["demeo_gp_dir"], cfg["binzel_gp_dir"]):
+    gp_dirs = [cfg["demeo_gp_dir"], cfg["binzel_gp_dir"]]
+    if cfg.get("marsset_gp_dir"):
+        gp_dirs.append(cfg["marsset_gp_dir"])
+    seen: set[str] = set()
+    for sub in gp_dirs:
         d = data_root / sub
-        if d.is_dir():
-            out.extend(sorted(d.glob("a*.txt")))
+        if not d.is_dir():
+            continue
+        for pattern in ("a*.txt", "au*.txt"):
+            for f in sorted(d.glob(pattern)):
+                if f.name not in seen:
+                    seen.add(f.name)
+                    out.append(f)
     return out
 
 
@@ -295,9 +304,20 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--no-augment", action="store_true")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Run even when pretrain.enabled is false in config",
+    )
     args = parser.parse_args()
 
     cfg = load_config()
+    if not pretrain_enabled(cfg) and not args.force:
+        print(
+            "Self-supervised pretraining is disabled (pretrain.enabled: false in "
+            "configs/default.yaml). Use --force to override."
+        )
+        raise SystemExit(0)
     out_dir = ROOT / "runs" / f"pretrain_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{args.model}"
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "config.yaml").write_text((ROOT / "configs" / "default.yaml").read_text())

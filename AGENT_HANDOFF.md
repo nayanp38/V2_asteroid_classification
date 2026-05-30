@@ -123,9 +123,8 @@ encoder  ─►  GAP  ─►  head_shared  ─►  head_fine
 export PYTHONPATH=src
 # Phase 1 (no augmentation, no pretrain): for baselines/ablations
 python -m asteroid_ml.train --model spectranet_lite --split run3
-# Full simplified pipeline (recommended): hierarchical + augmentation + pretrained encoder
-python -m asteroid_ml.train --model spectranet_lite --split run3 --phase 2 \
-    --pretrained runs/pretrain_<ts>_spectranet_lite/encoder.pt
+# Full simplified pipeline (recommended): hierarchical + augmentation (SSL pretrain disabled)
+python -m asteroid_ml.train --model spectranet_lite --split run3 --phase 2
 ```
 
 Loss: `FocalSmoothedCE(weight=effective_number)` on the fine head plus `coarse_weight × FocalSmoothedCE` on the coarse head (default `coarse_weight = 0.5`). Optimizer: AdamW + cosine LR with linear warmup + gradient clip 1.0.
@@ -138,9 +137,11 @@ Early stop on **val macro-F1 (constrained)**. Inner-CV split: `training.val_frac
 
 ---
 
-## 7. Self-supervised pretraining (`pretrain.py`)
+## 7. Self-supervised pretraining (`pretrain.py`) — **disabled by default**
 
-Masked-spectrum modelling on **every** GP file (labeled + unlabeled):
+`pretrain.enabled: false` in `configs/default.yaml`. `pretrain.py` exits unless `--force`; `train.py --pretrained` is ignored while disabled.
+
+When enabled, masked-spectrum modelling on **every** GP file (labeled + unlabeled):
 
 1. Preprocess to `(2, L)` exactly as for training.
 2. Randomly mask 1–3 wavelength windows totalling ~15 % of valid points; fill with the anchor value.
@@ -179,13 +180,12 @@ Removed in v0.3: circular wavelength shift, slope jitter, band-depth scaling, Sp
 ## 10. End-to-end run
 
 ```bash
-bash scripts/run_simplified.sh 100        # pretrain epochs default 100
+bash scripts/run_simplified.sh            # no SSL pretrain (pretrain.enabled: false)
 ```
 
 Runs in this order:
 
-1. Pretrain `spectranet_lite` and `spectrum_cnn` (100 epochs each).
-2. For each model, train `run1`, `run2`, `run3`, `cv5` (all five folds) with `--phase 2 --pretrained <encoder>`.
+1. For each model, train `run1`, `run2`, `run3`, `cv5` with `--phase 2` (random encoder init).
 
 Outputs go to `runs/`; full session log at `runs/_simplified_session.log`.
 

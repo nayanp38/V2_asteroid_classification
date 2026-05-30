@@ -1,6 +1,9 @@
 data_root: data
 demeo_gp_dir: DeMeo2009data_gp
 binzel_gp_dir: Binzel2019data_gp
+marsset_gp_dir: MITHNEOS_spectra_Marsset2022_gp
+marsset_spectra_dir: MITHNEOS_spectra_Marsset2022
+marsset_classes_file: Marsset2022_classes.txt
 demeotax_file: demeotax.tab
 binzel_classes_file: Binzel_classes.txt
 manifest_file: labels_manifest.csv
@@ -62,6 +65,9 @@ class_aliases:
   Srw: Sr
   Vw: V
   Svw: Sv
+  # Marsset 2022 MITHNEOS table (fixed-width / composite labels)
+  S_comp: S
+  CX: C
 
 # Coarse Bus-DeMeo grouping: first-letter complex (S, C, X) + end-member classes
 # kept as their own group. Used by the hierarchical head and constrained inference.
@@ -149,8 +155,9 @@ phase2:
     # reject if entropy > this (default ~0.85 * log(n_classes))
     reject_entropy: null
 
-# Self-supervised pretraining: masked-spectrum modeling.
+# Self-supervised pretraining: masked-spectrum modeling (disabled repo-wide).
 pretrain:
+  enabled: false
   mask_fraction: 0.15
   mask_min_bins: 5
   mask_max_bins: 30

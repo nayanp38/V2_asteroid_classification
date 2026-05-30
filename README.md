@@ -1,6 +1,6 @@
 # Asteroid 1D CNN (v2)
 
-1D convolutional neural networks on GP-interpolated Bus–DeMeo reflectance spectra (401 points, 0.45–2.45 µm at Δλ = 0.005 µm), with a **hierarchical (coarse + fine) classifier head** and **masked-spectrum self-supervised pretraining**.
+1D convolutional neural networks on GP-interpolated Bus–DeMeo reflectance spectra (401 points, 0.45–2.45 µm at Δλ = 0.005 µm), with a **hierarchical (coarse + fine) classifier head**. **SSL encoder pretraining is disabled** (`pretrain.enabled: false` in config); classifiers train from random initialization.
 
 This v2 implementation replaces the prior 2D rasterized-plot approach and adds a small, paper-defensible set of methodology upgrades.
 
@@ -19,9 +19,10 @@ python scripts/build_manifest.py   # if labels_manifest.csv missing
 
 | File | Role |
 |------|------|
-| `data/DeMeo2009data_gp/`, `data/Binzel2019data_gp/` | GP-interpolated spectra (wavelength, reflectance, σ) |
+| `data/DeMeo2009data_gp/`, `data/Binzel2019data_gp/`, `data/MITHNEOS_spectra_Marsset2022_gp/` | GP-interpolated spectra (wavelength, reflectance, σ) |
 | `data/demeotax.tab` | DeMeo BD labels (~371) |
 | `data/Binzel_classes.txt` | Binzel labels |
+| `data/Marsset2022_classes.txt`, `data/MITHNEOS_spectra_Marsset2022/` | Marsset et al. 2022 MITHNEOS labels + raw spectra |
 | `data/labels_manifest.csv` | Unified training manifest (built by script) |
 
 **Preprocessing (`spectrum_io.py`):**
@@ -36,9 +37,7 @@ A clean, paper-ready pipeline with three changes versus the v0.2 baseline:
 
 1. **Hierarchical head (Bus–DeMeo taxonomy).** Both `SpectrumCNN` and `SpectraNetLite` share their encoder + bottleneck, then split into a **fine head** (24-way subtype) and a **coarse head** (S/C/X/V/D/A/K/L/O/Q/R/T/B/Cgh complex). The training loss is `CE(fine) + λ·CE(coarse)` with `λ = 0.5`. At inference, the fine prediction is restricted to children of the predicted coarse class (constrained argmax). Both constrained and unconstrained metrics are always reported.
 2. **Stable training.** AdamW + cosine LR with linear warmup, gradient clipping at 1.0, class-balanced **focal loss with label smoothing** (Cui et al. 2019 effective-number weights, focal γ = 2, smoothing 0.1).
-3. **Self-supervised pretraining (`pretrain.py`).** Before fine-tuning we pretrain the encoder by **masking 1–3 wavelength windows totalling ~15 % of valid points** in each spectrum, replacing them with the anchor value, and reconstructing the original reflectance via a small upsampling decoder (MSE on masked positions only). Pretraining uses *all* GP files (labeled + unlabeled). The encoder weights are then warm-started into the classifier via `train.py --pretrained encoder.pt`, with an optional `freeze_encoder_epochs` warm-up.
-
-**Augmentation** (training only, `augmentation.py`): mask-aware Gaussian noise on reflectance and mild Gaussian smoothing. Earlier circular-shift / slope-jitter / band-mask / mixup experiments were removed in favor of this minimal pair for clarity.
+3. **Training-only augmentation** (`augmentation.py`): mask-aware Gaussian noise and mild Gaussian smoothing (enabled in phase 2). Masked-spectrum SSL pretraining (`pretrain.py`) is **off by default** (`pretrain.enabled: false`).
 
 ## Commands
 
@@ -46,26 +45,26 @@ A clean, paper-ready pipeline with three changes versus the v0.2 baseline:
 # 1) Build the manifest (drops low-valid-fraction spectra automatically).
 python scripts/build_manifest.py
 
-# 2) Pretrain the encoder on every GP file (labeled + unlabeled).
-python -m asteroid_ml.pretrain --model spectranet_lite --epochs 100
-python -m asteroid_ml.pretrain --model spectrum_cnn   --epochs 100
+# 2) Train classifier (random encoder init; pretrain.enabled is false).
+python -m asteroid_ml.train --model spectranet_lite --split run3 --phase 2
+python -m asteroid_ml.train --model spectranet_lite --split cv5  --phase 2
 
-# 3) Train classifier on any split, warm-starting from pretrained encoder.
-ENC=runs/pretrain_<ts>_spectranet_lite/encoder.pt
-python -m asteroid_ml.train --model spectranet_lite --split run3 --phase 2 --pretrained "$ENC"
-python -m asteroid_ml.train --model spectranet_lite --split cv5  --phase 2 --pretrained "$ENC"
+# Optional: SSL pretrain (requires pretrain.enabled: true or pretrain.py --force).
+# python -m asteroid_ml.pretrain --model spectranet_lite --epochs 100 --force
+# python -m asteroid_ml.train --model spectranet_lite --split run3 --phase 2 \
+#     --pretrained runs/pretrain_<ts>_spectranet_lite/encoder.pt
 
-# 4) Re-evaluate any run with Grad-CAMs.
+# 3) Re-evaluate any run with Grad-CAMs.
 python -m asteroid_ml.evaluate --run runs/<run_id> --gradcam --gradcam-samples 12
 
-# 5) Predict on unlabeled GP files (taxonomic-constrained).
+# 4) Predict on unlabeled GP files (taxonomic-constrained).
 python -m asteroid_ml.infer --run runs/<run_id>
 
-# 6) Export a portable bundle for sharing.
+# 5) Export a portable bundle for sharing.
 python -m asteroid_ml.export_bundle --run runs/<run_id>
 
-# 7) End-to-end orchestrator (pretrain + 4 splits x 2 models)
-bash scripts/run_simplified.sh 100
+# 6) End-to-end orchestrator (4 splits × 2 models, no SSL pretrain)
+bash scripts/run_simplified.sh
 ```
 
 ## Run artifacts
@@ -102,7 +101,7 @@ Both models share the same dual-head structure (`head_shared` → `head_fine` + 
 
 ## Experiment log (simplified pipeline)
 
-All numbers come from `metrics.json` (constrained inference; unconstrained in parentheses when the gap matters). Pretrained encoder: 100 epochs masked-spectrum reconstruction on every GP file (labeled + unlabeled).
+All numbers come from `metrics.json` (constrained inference; unconstrained in parentheses when the gap matters). **Historical runs** below used SSL pretrain (`--pretrained`); new training defaults to **random encoder init** (`pretrain.enabled: false`).
 
 | Model           | Split      | Best val macro-F1 | Test macro-F1 | Test acc | Test coarse acc | Top-2 acc |
 |-----------------|-----------|-------------------|---------------|----------|-----------------|-----------|
@@ -119,6 +118,17 @@ For context, the v0.2 baseline on `run3` (no hierarchical head, no SSL pretrain,
 
 Use `python scripts/summarize_runs.py` for a fresh one-row-per-run dump and `python scripts/aggregate_cv.py --model spectranet_lite` for cv5 mean ± std.
 
+### Pretraining ablation (archived, `run3`, DeMeo + Binzel)
+
+SSL pretraining is **disabled** in the repo (`pretrain.enabled: false`). Archived comparison on the 567-row manifest (`n_train=332` / `n_test=111`):
+
+| Condition | Test macro-F1 (constr / unc) | Test coarse acc |
+|-----------|------------------------------|-----------------|
+| No pretrain | 0.221 / 0.237 | 0.396 |
+| With pretrain | 0.237 / 0.239 | 0.496 |
+
+Pretraining gave a modest fine macro-F1 lift and a larger coarse-head benefit; see `runs/20260530_*_spectranet_lite_run3_p2`. To re-enable: set `pretrain.enabled: true`, run `python -m asteroid_ml.pretrain --force`, then `train.py --pretrained ...`.
+
 ## Tests
 
 ```bash
@@ -129,5 +139,5 @@ PYTHONPATH=src MPLBACKEND=Agg pytest tests/ -q -m slow   # includes short traini
 ## Regenerating GP spectra
 
 ```bash
-python scripts/interpolate_spectra_gp.py   # from raw DeMeo2009data / Binzel2019data
+python scripts/interpolate_spectra_gp.py   # DeMeo / Binzel / MITHNEOS Marsset 2022
 ```

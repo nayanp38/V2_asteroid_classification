@@ -16,7 +16,17 @@ from asteroid_ml.spectrum_io import PreprocessConfig, valid_fraction
 
 
 def main() -> None:
-    cfg = load_config()
+    import argparse
+
+    p = argparse.ArgumentParser(description="Build labels_manifest.csv")
+    p.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Config YAML (default: configs/default.yaml)",
+    )
+    args = p.parse_args()
+    cfg = load_config(args.config)
     data_root = ROOT / cfg["data_root"]
     mars_path = data_root / cfg.get("mars_crossers_file", "mars_crossers.txt")
 
@@ -31,6 +41,14 @@ def main() -> None:
             except Exception:
                 return False
 
+    marsset_gp = None
+    marsset_cls = None
+    if cfg.get("marsset_gp_dir"):
+        p = data_root / cfg["marsset_gp_dir"]
+        marsset_gp = p if p.is_dir() else None
+    if cfg.get("marsset_classes_file"):
+        p = data_root / cfg["marsset_classes_file"]
+        marsset_cls = p if p.is_file() else None
     records, stats, alias_log = build_manifest(
         data_root=data_root,
         demeo_gp_dir=data_root / cfg["demeo_gp_dir"],
@@ -42,6 +60,8 @@ def main() -> None:
         excluded_classes=cfg.get("excluded_classes", []),
         mars_crossers_path=mars_path if mars_path.is_file() else None,
         quality_filter=quality_filter,
+        marsset_gp_dir=marsset_gp,
+        marsset_classes_path=marsset_cls,
     )
 
     out_path = data_root / cfg["manifest_file"]
@@ -64,7 +84,10 @@ def main() -> None:
     alias_path.write_text("\n".join(alias_log) + ("\n" if alias_log else ""))
 
     print(f"Wrote {len(records)} rows to {out_path}")
-    print(f"  DeMeo: {stats['demeo_rows']}, Binzel: {stats['binzel_rows']}")
+    print(
+        f"  DeMeo: {stats['demeo_rows']}, Binzel: {stats['binzel_rows']}, "
+        f"Marsset: {stats.get('marsset_rows', 0)}"
+    )
     print(f"  Unique asteroids: {stats['unique_asteroids']}")
     print(f"  Class aliases applied: {stats['alias_applications']}")
     print(f"  Skipped (no label): {stats.get('skipped_no_label', 0)}")

@@ -21,7 +21,7 @@ import torch  # noqa: E402
 from torch.utils.data import DataLoader, Subset  # noqa: E402
 
 from asteroid_ml.augmentation import AugmentConfig
-from asteroid_ml.config import ROOT, load_config
+from asteroid_ml.config import ROOT, load_config, pretrain_enabled
 from asteroid_ml.dataset import AsteroidSpectrumDataset, compute_class_weights
 from asteroid_ml.gradcam import generate_gradcam_report
 from asteroid_ml.infer import run_inference
@@ -246,7 +246,17 @@ def train_one_split(
     model = build_model(model_name, n_classes=n_fine, n_coarse=n_coarse).to(device)
     encoder_param_names: List[str] = []
     freeze_epochs = 0
-    if pretrained_path is not None and pretrained_path.is_file():
+    if pretrained_path is not None:
+        if not pretrain_enabled(cfg):
+            print(
+                "  pretrain.enabled is false in config; ignoring --pretrained "
+                f"({pretrained_path})"
+            )
+            pretrained_path = None
+        elif not pretrained_path.is_file():
+            print(f"  warning: pretrained path not found: {pretrained_path}")
+            pretrained_path = None
+    if pretrained_path is not None:
         sd = torch.load(pretrained_path, map_location=device, weights_only=True)
         missing, unexpected = model.load_state_dict(sd, strict=False)
         encoder_param_names = list(sd.keys())
@@ -546,9 +556,15 @@ def main() -> None:
         action="store_true",
         help="Disable the coarse head and constrained inference (ablation)",
     )
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to config YAML (default: configs/default.yaml)",
+    )
     args = parser.parse_args()
 
-    cfg = load_config()
+    cfg = load_config(Path(args.config) if args.config else None)
     if args.tuned_params:
         cfg = _merge_tuned_params(cfg, Path(args.tuned_params))
     if args.disable_hierarchical:
@@ -563,6 +579,10 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     pretrained_path = Path(args.pretrained) if args.pretrained else None
+    if pretrained_path and not pretrain_enabled(cfg):
+        print(
+            "Note: pretrain.enabled is false; encoder warm-start will be skipped."
+        )
 
     extra_manifest: Dict[str, str] = {}
     if args.tuned_params:

@@ -19,3 +19,8 @@ def load_config(path: Path | None = None) -> Dict[str, Any]:
             "PyYAML is required. Install with: pip install pyyaml"
         ) from exc
     return yaml.safe_load(text)
+
+
+def pretrain_enabled(cfg: Dict[str, Any]) -> bool:
+    """Whether SSL encoder pretraining and warm-start are allowed."""
+    return bool(cfg.get("pretrain", {}).get("enabled", False))

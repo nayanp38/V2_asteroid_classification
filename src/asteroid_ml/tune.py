@@ -12,7 +12,7 @@ from pathlib import Path
 import optuna
 from optuna.trial import Trial
 
-from asteroid_ml.config import ROOT, load_config
+from asteroid_ml.config import ROOT, load_config, pretrain_enabled
 from asteroid_ml.labels import read_manifest_csv
 from asteroid_ml.splits import get_split
 from asteroid_ml.train import _git_hash, train_one_split
@@ -128,6 +128,9 @@ def main() -> None:
     cfg = load_config()
     n_trials = args.n_trials or cfg.get("phase2", {}).get("optuna", {}).get("n_trials", 20)
     pretrained = Path(args.pretrained) if args.pretrained else None
+    if pretrained and not pretrain_enabled(cfg):
+        print("pretrain.enabled is false; ignoring --pretrained for Optuna trials.")
+        pretrained = None
     run_study(args.model, args.split, n_trials, args.study_name, pretrained_path=pretrained)
 
 

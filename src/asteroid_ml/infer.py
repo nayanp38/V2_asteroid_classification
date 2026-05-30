@@ -32,14 +32,22 @@ def list_unlabeled_gp_files(data_root: Path, cfg: dict) -> List[Path]:
             labeled_paths.add(rec.spectrum_path)
 
     files: List[Path] = []
-    for sub in (cfg["demeo_gp_dir"], cfg["binzel_gp_dir"]):
+    gp_dirs = [cfg["demeo_gp_dir"], cfg["binzel_gp_dir"]]
+    if cfg.get("marsset_gp_dir"):
+        gp_dirs.append(cfg["marsset_gp_dir"])
+    seen: set[str] = set()
+    for sub in gp_dirs:
         gp_dir = data_root / sub
         if not gp_dir.is_dir():
             continue
-        for f in sorted(gp_dir.glob("a*.txt")):
-            rel = str(f.relative_to(data_root))
-            if rel not in labeled_paths:
-                files.append(f)
+        for pattern in ("a*.txt", "au*.txt"):
+            for f in sorted(gp_dir.glob(pattern)):
+                if f.name in seen:
+                    continue
+                seen.add(f.name)
+                rel = str(f.relative_to(data_root))
+                if rel not in labeled_paths:
+                    files.append(f)
     return files
 
 

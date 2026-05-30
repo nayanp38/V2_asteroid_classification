@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+MARSSET_HAZARD_TAXON_RE = re.compile(r"\s(YES|NO)\s+(\S+)\s+([-0-9.]+)\s")
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,16 @@ def normalize_asteroid_id(raw: str) -> str:
     if raw.isdigit():
         return raw.lstrip("0") or "0"
     return raw
+
+
+def normalize_marsset_taxon(taxon: str) -> str:
+    """Map a Marsset 2022 table taxon token to a primary Bus–DeMeo class string."""
+    token = taxon.strip().rstrip(":")
+    if not token or token == ":":
+        return ""
+    # Composite labels use ';' (e.g. S;Sr, Sq;Q, C;X) — primary class only.
+    primary = re.split(r"[;,]", token)[0].strip()
+    return primary
 
 
 def apply_class_alias(class_raw: str, aliases: Dict[str, str], bd_classes: Set[str]) -> Tuple[str, bool]:
@@ -91,6 +102,22 @@ def parse_demeotax(path: Path) -> Dict[str, Tuple[str, str]]:
     return id_to_class
 
 
+def parse_marsset_classes(path: Path) -> Dict[str, str]:
+    """
+    Parse Marsset2022_classes.txt (MITHNEOS VizieR table) -> spectrum filename -> taxon.
+    """
+    out: Dict[str, str] = {}
+    for line in path.read_text().splitlines():
+        if not line or line[0] not in "au":
+            continue
+        m = MARSSET_HAZARD_TAXON_RE.search(line)
+        if not m:
+            continue
+        fname = line[0:32].strip()
+        out[fname] = m.group(2)
+    return out
+
+
 def parse_binzel_classes(path: Path) -> Dict[str, Tuple[str, List[str]]]:
     """
     Parse Binzel_classes.txt -> asteroid_id -> (primary_class, all_classes).
@@ -131,6 +158,12 @@ def infer_dynamical_group(
 ) -> str:
     if source == "demeo":
         return "main_belt"
+    if source == "marsset":
+        if asteroid_id in mars_crosser_ids:
+            return "mars_crosser"
+        if asteroid_id not in demeo_ids:
+            return "mars_crosser"
+        return "nea"
     if asteroid_id in mars_crosser_ids:
         return "mars_crosser"
     # Binzel-only objects (not in DeMeo taxonomy table) treated as Mars-crosser
@@ -138,6 +171,18 @@ def infer_dynamical_group(
     if asteroid_id not in demeo_ids:
         return "mars_crosser"
     return "nea"
+
+
+def _iter_gp_spectra(gp_dir: Path) -> Iterable[Path]:
+    """All GP spectrum files (DeMeo-style ``a*`` and MITHNEOS ``au*`` names)."""
+    seen: Set[str] = set()
+    for pattern in ("a*.txt", "au*.txt"):
+        for spec_path in sorted(gp_dir.glob(pattern)):
+            key = spec_path.name
+            if key in seen:
+                continue
+            seen.add(key)
+            yield spec_path
 
 
 def build_manifest(
@@ -151,6 +196,8 @@ def build_manifest(
     excluded_classes: Iterable[str],
     mars_crossers_path: Optional[Path] = None,
     quality_filter: Optional[Callable[[Path], bool]] = None,
+    marsset_gp_dir: Optional[Path] = None,
+    marsset_classes_path: Optional[Path] = None,
 ) -> Tuple[List[LabelRecord], Dict[str, int], List[str]]:
     """
     Build manifest rows and return (records, stats, alias_log_lines).
@@ -162,6 +209,9 @@ def build_manifest(
     excluded = {c.upper() for c in excluded_classes}
     demeo_tax = parse_demeotax(demeotax_path)
     binzel_tax = parse_binzel_classes(binzel_classes_path)
+    marsset_tax: Dict[str, str] = {}
+    if marsset_classes_path is not None and marsset_classes_path.is_file():
+        marsset_tax = parse_marsset_classes(marsset_classes_path)
     demeo_ids = set(demeo_tax.keys())
     mars_ids = load_mars_crosser_ids(mars_crossers_path) if mars_crossers_path else set()
 
@@ -206,7 +256,7 @@ def build_manifest(
     ):
         if not gp_dir.is_dir():
             continue
-        for spec_path in sorted(gp_dir.glob("a*.txt")):
+        for spec_path in _iter_gp_spectra(gp_dir):
             ast_id = asteroid_key_from_path(spec_path)
             class_raw = None
             if ast_id in demeo_tax:
@@ -218,6 +268,19 @@ def build_manifest(
                 continue
             add_row(spec_path, source, class_raw, ast_id)
 
+    if marsset_gp_dir is not None and marsset_gp_dir.is_dir():
+        for spec_path in _iter_gp_spectra(marsset_gp_dir):
+            fname = spec_path.name
+            if fname not in marsset_tax:
+                skipped_no_label.append(f"marsset:{fname}")
+                continue
+            taxon = normalize_marsset_taxon(marsset_tax[fname])
+            if not taxon:
+                skipped_no_label.append(f"marsset:{fname}:empty_taxon")
+                continue
+            ast_id = asteroid_key_from_path(spec_path)
+            add_row(spec_path, "marsset", taxon, ast_id)
+
     if unmapped:
         raise RuntimeError(
             "Unmapped class tokens:\n  " + "\n  ".join(unmapped[:30])
@@ -228,6 +291,7 @@ def build_manifest(
         "total_rows": len(records),
         "demeo_rows": sum(1 for r in records if r.source == "demeo"),
         "binzel_rows": sum(1 for r in records if r.source == "binzel"),
+        "marsset_rows": sum(1 for r in records if r.source == "marsset"),
         "unique_asteroids": len({r.asteroid_id for r in records}),
         "alias_applications": len(alias_log),
         "multi_class_binzel": sum(

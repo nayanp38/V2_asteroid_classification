@@ -1,0 +1,53 @@
+{
+  "manifest": "/Users/nayanpatel/Asteroid Paper/v2/data/labels_manifest.csv",
+  "stats": {
+    "total_rows": 567,
+    "demeo_rows": 356,
+    "binzel_rows": 211,
+    "unique_asteroids": 553,
+    "alias_applications": 63,
+    "multi_class_binzel": 0,
+    "skipped_no_label": 22,
+    "dropped_low_quality": 47,
+    "dropped_low_quality_examples": [
+      "demeo:21:a000021.sp31.txt",
+      "demeo:41:a000041.sp30.txt",
+      "demeo:54:a000054.sp19.txt",
+      "demeo:78:a000078.sp46.txt",
+      "demeo:106:a000106.sp24.txt",
+      "demeo:111:a000111.sp31.txt",
+      "demeo:175:a000175.sp47.txt",
+      "demeo:191:a000191.sp38.txt",
+      "demeo:402:a000402.sp04.txt",
+      "demeo:579:a000579.sp04.txt"
+    ]
+  },
+  "preprocess": {
+    "std_mask_enabled": true,
+    "std_mask_floor": 0.02,
+    "std_mask_k": 2.0,
+    "min_valid_fraction": 0.5
+  },
+  "alias_log_sample": [
+    "8: Sw -> S",
+    "32: Sw -> S",
+    "39: Sqw -> Sq",
+    "63: Sw -> S",
+    "108: Sw -> S",
+    "151: Sw -> S",
+    "192: Sw -> S",
+    "243: Sw -> S",
+    "244: Sw -> S",
+    "295: Sw -> S",
+    "352: Sw -> S",
+    "433: Sw -> S",
+    "453: Sw -> S",
+    "512: Sqw -> Sq",
+    "625: Sw -> S",
+    "675: Sw -> S",
+    "782: Sw -> S",
+    "913: Sw -> S",
+    "1011: Sw -> S",
+    "1126: Sw -> S"
+  ]
+}

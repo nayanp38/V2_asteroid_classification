@@ -1,0 +1,164 @@
+data_root: data
+demeo_gp_dir: DeMeo2009data_gp
+binzel_gp_dir: Binzel2019data_gp
+demeotax_file: demeotax.tab
+binzel_classes_file: Binzel_classes.txt
+manifest_file: labels_manifest.csv
+mars_crossers_file: mars_crossers.txt
+
+wavelength_min: 0.45
+wavelength_max: 2.45
+wavelength_step: 0.005
+normalize_wavelength: 0.55
+
+preprocess:
+  # Use the gp_std column to mask out points where the GP is too uncertain
+  # (these are typically interpolation/extrapolation artifacts).
+  std_mask_enabled: true
+  std_mask_floor: 0.02
+  std_mask_k: 2.0
+  # Detect "frozen" GP runs (collapse to mean over a gap) where adjacent
+  # reflectance values are bit-identical for >= frozen_run_min points.
+  frozen_run_enabled: true
+  frozen_eps: 1.0e-4
+  frozen_run_min: 4
+  # Drop spectra whose mask covers <min_valid_fraction of points after the
+  # std-based rule. This is a data-quality filter applied at manifest build.
+  min_valid_fraction: 0.5
+  # Replacement value for artifact regions (after normalization, channel 0).
+  # 1.0 == the normalization anchor, so masked regions look "flat".
+  artifact_fill_value: 1.0
+
+bd_classes:
+  - A
+  - B
+  - C
+  - Cb
+  - Cg
+  - Cgh
+  - Ch
+  - D
+  - K
+  - L
+  - O
+  - Q
+  - R
+  - S
+  - Sa
+  - Sq
+  - Sr
+  - Sv
+  - T
+  - V
+  - X
+  - Xc
+  - Xk
+  - Xn
+  - Xe
+
+class_aliases:
+  Sw: S
+  Sqw: Sq
+  Srw: Sr
+  Vw: V
+  Svw: Sv
+
+# Coarse Bus-DeMeo grouping: first-letter complex (S, C, X) + end-member classes
+# kept as their own group. Used by the hierarchical head and constrained inference.
+coarse_groups:
+  S: [S, Sa, Sq, Sr, Sv]
+  C: [C, Cb, Cg, Cgh, Ch]
+  X: [X, Xc, Xk, Xn, Xe]
+  A: [A]
+  B: [B]
+  D: [D]
+  K: [K]
+  L: [L]
+  O: [O]
+  Q: [Q]
+  R: [R]
+  T: [T]
+  V: [V]
+
+# Binzel Xn spectra used in Run 1 training (DeMeo et al. 2009 + 4 Xn)
+run1_xn_training_ids:
+  - "1862"
+  - "3103"
+  - "4055"
+  - "10302"
+
+excluded_classes:
+  - U
+  - P
+
+training:
+  batch_size: 16
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  max_epochs: 50
+  early_stop_patience: 15
+  val_fraction: 0.25
+  split_seed: 42
+  # Cosine LR with warmup; set warmup_epochs: 0 to disable scheduling.
+  warmup_epochs: 3
+  cosine_lr: true
+  grad_clip_norm: 1.0
+  # "linear" = N/(K*n_c) used in the v0.2 baseline; "effective" = Cui 2019 effective number with class_weight_beta.
+  class_weight_mode: linear
+  class_weight_beta: 0.999
+  # Plain class-weighted CE (focal_gamma=0 disables focusing, label_smoothing=0 disables smoothing).
+  focal_gamma: 0.0
+  label_smoothing: 0.0
+
+# Hierarchical coarse/fine head loss + inference.
+hierarchical:
+  enabled: true
+  # Lower weight: coarse head is auxiliary; fine head is primary.
+  coarse_weight: 0.3
+  # When true, fine predictions are restricted to children of the predicted coarse class.
+  # Set to false if the coarse head accuracy is below the random baseline.
+  constrained_inference: true
+
+run3:
+  train_fraction: 0.8
+  min_test_per_class: 1
+  min_class_size_for_80_20: 5
+
+cv5:
+  n_splits: 5
+  seed: 42
+
+# Phase 2: augmentation, tuning, explainability, inference
+phase2:
+  augmentation:
+    enabled: false
+    noise_std: 0.015
+    smooth_sigma: 0.8
+    p_noise: 0.8
+    p_smooth: 0.3
+  optuna:
+    n_trials: 20
+    max_epochs: 30
+    early_stop_patience: 8
+  gradcam:
+    enabled: true
+    max_samples: 12
+  inference:
+    enabled: true
+    reject_probability: 0.35
+    # reject if entropy > this (default ~0.85 * log(n_classes))
+    reject_entropy: null
+
+# Self-supervised pretraining: masked-spectrum modeling.
+pretrain:
+  mask_fraction: 0.15
+  mask_min_bins: 5
+  mask_max_bins: 30
+  n_windows_max: 3
+  batch_size: 32
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  max_epochs: 200
+  warmup_epochs: 5
+  # Set > 0 to freeze the pretrained encoder for the first N classifier epochs.
+  freeze_encoder_epochs: 0
